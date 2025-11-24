@@ -7,3 +7,4 @@ core/test.py
 .streamlit
 config.yaml
 core/__pycache__
+gdgvit_2024.csv

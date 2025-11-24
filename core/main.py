@@ -283,6 +283,50 @@ def repoActivity(data):
 
     return [repo_activity, stars, issues_opened, issues_resolved, pr_opened, pr_closed, commits, branches, forks, actions_success, action_failures, new_collaborator, comments]
 
+def getTopRepositories(repo_activity, limit=10):
+    """Get top repositories by activity"""
+    sorted_repos = sorted(repo_activity.items(), 
+                         key=lambda x: sum(x[1].values()), 
+                         reverse=True)
+    return sorted_repos[:limit]
+
+def getCommitFrequency(data):
+    """Get commit frequency by day of week"""
+    data['timestamp'] = pd.to_datetime(data['timestamp'], format='ISO8601', errors='coerce')
+    data['day_of_week'] = pd.to_datetime(data['timestamp']).dt.day_name()
+    frequency = data['day_of_week'].value_counts().sort_index()
+    return frequency
+
+def getActivityByHour(data):
+    """Get activity distribution by hour"""
+    data['timestamp'] = pd.to_datetime(data['timestamp'], format='ISO8601', errors='coerce')
+    data['hour'] = pd.to_datetime(data['timestamp']).dt.hour
+    hourly = data['hour'].value_counts().sort_index()
+    return hourly
+
+def getActivityCalendar(data):
+    """Get daily activity for heatmap"""
+    data['timestamp'] = pd.to_datetime(data['timestamp'], format='ISO8601', errors='coerce')
+    data['date'] = data['timestamp'].dt.date
+    daily_activity = data.groupby('date').size()
+    return daily_activity
+
+def getMostActiveRepositories(repo_activity, limit=10):
+    """Get most active repositories by type"""
+    repos_with_types = {}
+    for repo, metrics in repo_activity.items():
+        total = sum(metrics.values())
+        repos_with_types[repo] = total
+    
+    sorted_repos = sorted(repos_with_types.items(), key=lambda x: x[1], reverse=True)
+    return sorted_repos[:limit]
+
+def getContributorStats(data):
+    """Get top contributors"""
+    data['embeds.0.author.name'] = data['embeds.0.author.name'].fillna('Unknown')
+    contributors = data['embeds.0.author.name'].value_counts().head(10)
+    return contributors
+
 def main():
     # data=clean_data("data.csv")
     # data.to_csv("clean_data.csv",index=False)
