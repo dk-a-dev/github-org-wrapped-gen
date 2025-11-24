@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 import sys
+from pathlib import Path
 
 # Add parent directory to path to import config
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,6 +31,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
 
+# Load environment variables
+import dotenv
+dotenv.load_dotenv()
+
 # ===== SIDEBAR CONFIGURATION =====
 st.sidebar.title("Dashboard Configuration")
 st.sidebar.markdown("---")
@@ -55,7 +60,17 @@ st.sidebar.subheader("Data Management")
 
 # Construct expected filename
 expected_filename = f"{org_name}_{org_year}.csv"
-file_status = "✅ File found" if os.path.exists(expected_filename) else "❌ File not found"
+
+# Support loading from environment variable or specific data directory
+csv_path = None
+if os.getenv('CSV_DATA_PATH'):
+    # If environment variable is set, use that path
+    csv_path = os.path.join(os.getenv('CSV_DATA_PATH'), expected_filename)
+else:
+    # Default to project root
+    csv_path = expected_filename
+
+file_status = "✅ File found" if os.path.exists(csv_path) else "❌ File not found"
 st.sidebar.info(f"Looking for: `{expected_filename}` \n {file_status}")
 
 # Options to load data
@@ -69,15 +84,15 @@ data_loaded = False
 data = None
 
 if data_source == "Use Default File":
-    if os.path.exists(expected_filename):
+    if os.path.exists(csv_path):
         try:
-            data = pd.read_csv(expected_filename)
+            data = pd.read_csv(csv_path)
             data_loaded = True
             st.sidebar.success(f"Loaded: {expected_filename}")
         except Exception as e:
             st.sidebar.error(f"Error loading {expected_filename}: {e}")
     else:
-        st.sidebar.warning(f"{expected_filename} not found in project root")
+        st.sidebar.warning(f"{expected_filename} not found. Please upload a CSV file.")
 else:
     uploaded_file = st.sidebar.file_uploader(
         "Upload CSV File",
@@ -144,11 +159,25 @@ with col2:
 
 st.markdown("---")
 
-# Display banner image if it exists
+# Display banner image if configured and exists
 banner_path = "banner.jpeg"
-if os.path.exists(banner_path):
+show_banner = org_config.get("show_banner", False)
+
+if show_banner and os.path.exists(banner_path):
     st.image(banner_path, use_column_width=True)
     st.markdown("---")
+elif not show_banner:
+    with st.expander("📸 Add Banner Image (Optional)"):
+        st.info(f"""
+        To add a custom banner for **{org_full_name}**:
+        
+        1. Create or prepare a banner image (recommended: 1200x300px)
+        2. Save it as `banner.jpeg` in the project root
+        3. Refresh this page to see it displayed here
+        
+        **Supported formats:** JPEG/JPG
+        **To remove:** Delete the `banner.jpeg` file
+        """)
 
 # Show message if no data loaded
 if not data_loaded:
