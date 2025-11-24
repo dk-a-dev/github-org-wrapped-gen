@@ -1,6 +1,6 @@
 # Organization configurations
 ORGANIZATIONS = {
-    "GDGVIT": {
+    "GDGVIT_2024": {
         "name": "GDGVIT",
         "full_name": "Google Developer Groups - VIT",
         "description": "Community of developers passionate about Google technologies",
@@ -26,5 +26,5 @@ ORGANIZATIONS = {
     },
 }
 
-DEFAULT_ORG = "GDGVIT"
-DEFAULT_CSV_PATH = "clean_data.csv"
+DEFAULT_ORG = "GDGVIT_2024"
+DEFAULT_CSV_PATH = "gdgvit_2024.csv"

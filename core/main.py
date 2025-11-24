@@ -322,10 +322,177 @@ def getMostActiveRepositories(repo_activity, limit=10):
     return sorted_repos[:limit]
 
 def getContributorStats(data):
-    """Get top contributors"""
-    data['embeds.0.author.name'] = data['embeds.0.author.name'].fillna('Unknown')
-    contributors = data['embeds.0.author.name'].value_counts().head(10)
+    """
+    Get top contributors with proper filtering and cleaning.
+    Removes 'Unknown' and bot accounts.
+    """
+    if 'embeds.0.author.name' not in data.columns:
+        return pd.Series()
+    
+    # Create a copy to avoid modifying original
+    author_data = data['embeds.0.author.name'].copy()
+    
+    # Fill NaN values but mark for removal
+    author_data = author_data.fillna('')
+    
+    # Filter out empty strings and 'Unknown' entries
+    author_data = author_data[
+        (author_data.str.strip() != '') & 
+        (author_data.str.lower() != 'unknown') &
+        (author_data.str.lower() != 'nan')
+    ]
+    
+    if len(author_data) == 0:
+        return pd.Series()
+    
+    # Get value counts and take top 10
+    contributors = author_data.value_counts().head(10)
+    
     return contributors
+
+def getContributorDetails(data, contributor_name):
+    """
+    Get detailed statistics for a specific contributor.
+    
+    Args:
+        data (pd.DataFrame): Activity data
+        contributor_name (str): Name of the contributor
+        
+    Returns:
+        dict: Detailed contributor statistics
+    """
+    # Filter data for the contributor
+    contributor_data = data[data['embeds.0.author.name'].str.lower() == contributor_name.lower()]
+    
+    if len(contributor_data) == 0:
+        return None
+    
+    stats = {
+        'name': contributor_name,
+        'total_activities': len(contributor_data),
+        'first_activity': contributor_data['timestamp'].min(),
+        'last_activity': contributor_data['timestamp'].max(),
+        'activity_type_breakdown': {},
+        'monthly_activity': {},
+        'most_active_day': None,
+        'most_active_hour': None,
+        'repositories_contributed': set()
+    }
+    
+    # Parse timestamp
+    contributor_data = contributor_data.copy()
+    contributor_data['timestamp'] = pd.to_datetime(contributor_data['timestamp'], errors='coerce')
+    
+    # Activity type breakdown and repository extraction
+    for _, row in contributor_data.iterrows():
+        title = str(row.get('embeds.0.title', '')).lower()
+        title_original = str(row.get('embeds.0.title', ''))
+        
+        # Extract repository name - improved logic
+        repo_name = None
+        
+        # Try multiple extraction patterns
+        if ' in ' in title_original:
+            # Pattern: "Action in RepositoryName"
+            parts = title_original.split(' in ')
+            if len(parts) > 1:
+                repo_name = parts[-1].strip()
+        elif '/' in title_original:
+            # Pattern: "RepositoryName/Action" or "org/repo"
+            parts = title_original.split('/')
+            if len(parts) >= 1:
+                repo_name = parts[0].strip()
+        elif ':' in title_original:
+            # Pattern: "RepositoryName: Action"
+            parts = title_original.split(':')
+            if len(parts) > 0:
+                repo_name = parts[0].strip()
+        
+        # Clean up repository name
+        if repo_name and repo_name.lower() not in ['unknown', 'nan', '']:
+            # Remove common action words from repo name
+            action_words = ['opened', 'closed', 'merged', 'created', 'deleted', 'pushed', 'starred']
+            for word in action_words:
+                if repo_name.lower().startswith(word):
+                    repo_name = repo_name[len(word):].strip()
+            
+            if repo_name and repo_name.lower() not in ['unknown', 'nan', '']:
+                stats['repositories_contributed'].add(repo_name)
+        
+        # Activity type breakdown
+        if 'star' in title:
+            activity_type = 'Stars'
+        elif 'pull request' in title:
+            if 'opened' in title:
+                activity_type = 'PRs Opened'
+            elif 'closed' in title or 'merged' in title:
+                activity_type = 'PRs Merged'
+            else:
+                activity_type = 'Pull Requests'
+        elif 'issue' in title:
+            if 'opened' in title:
+                activity_type = 'Issues Opened'
+            elif 'closed' in title:
+                activity_type = 'Issues Closed'
+            else:
+                activity_type = 'Issues'
+        elif 'commit' in title or 'push' in title:
+            activity_type = 'Commits'
+        elif 'fork' in title:
+            activity_type = 'Forks'
+        elif 'branch' in title:
+            activity_type = 'Branches'
+        elif 'comment' in title:
+            activity_type = 'Comments'
+        elif 'created' in title and 'repository' in title:
+            activity_type = 'Repository Created'
+        else:
+            activity_type = 'Other'
+        
+        stats['activity_type_breakdown'][activity_type] = stats['activity_type_breakdown'].get(activity_type, 0) + 1
+    
+    # Monthly activity
+    contributor_data['month'] = contributor_data['timestamp'].dt.to_period('M')
+    monthly = contributor_data['month'].value_counts().sort_index()
+    stats['monthly_activity'] = monthly.to_dict()
+    
+    # Most active day
+    contributor_data['day'] = contributor_data['timestamp'].dt.day_name()
+    day_counts = contributor_data['day'].value_counts()
+    if len(day_counts) > 0:
+        stats['most_active_day'] = day_counts.idxmax()
+    
+    # Most active hour
+    contributor_data['hour'] = contributor_data['timestamp'].dt.hour
+    hour_counts = contributor_data['hour'].value_counts()
+    if len(hour_counts) > 0:
+        stats['most_active_hour'] = int(hour_counts.idxmax())
+    
+    stats['repositories_contributed'] = sorted(list(stats['repositories_contributed']))
+    
+    return stats
+
+def getContributorTimeline(data, contributor_name, limit=20):
+    """
+    Get recent activities timeline for a contributor.
+    
+    Args:
+        data (pd.DataFrame): Activity data
+        contributor_name (str): Name of the contributor
+        limit (int): Number of recent activities to return
+        
+    Returns:
+        pd.DataFrame: Recent activities
+    """
+    contributor_data = data[data['embeds.0.author.name'].str.lower() == contributor_name.lower()].copy()
+    
+    if len(contributor_data) == 0:
+        return pd.DataFrame()
+    
+    contributor_data['timestamp'] = pd.to_datetime(contributor_data['timestamp'], errors='coerce')
+    contributor_data = contributor_data.sort_values('timestamp', ascending=False).head(limit)
+    
+    return contributor_data[['timestamp', 'embeds.0.title', 'embeds.0.author.url']].reset_index(drop=True)
 
 def main():
     # data=clean_data("data.csv")
